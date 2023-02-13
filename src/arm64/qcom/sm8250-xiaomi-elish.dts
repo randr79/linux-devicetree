@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause
 /*
- * Copyright (c) 2021, Konrad Dybcio <konrad.dybcio@somainline.org>
+ * Copyright (c) 2022, 2023 Jianhua Lu <lujianhua000@gmail.com>
  */
 
+/dts-v1/;
+
+#include <dt-bindings/arm/qcom,ids.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
 #include "sm8250.dtsi"
 #include "pm8150.dtsi"
@@ -10,12 +13,23 @@
 #include "pm8150l.dtsi"
 #include "pm8009.dtsi"
 
+/*
+ * Delete following upstream (sm8250.dtsi) reserved
+ * memory mappings which are different on this device.
+ */
 /delete-node/ &adsp_mem;
-/delete-node/ &spss_mem;
 /delete-node/ &cdsp_secure_heap;
+/delete-node/ &slpi_mem;
+/delete-node/ &spss_mem;
+/delete-node/ &xbl_aop_mem;
 
 / {
-	qcom,msm-id = <356 0x20001>; /* SM8250 v2.1 */
+	model = "Xiaomi Mi Pad 5 Pro";
+	compatible = "xiaomi,elish", "qcom,sm8250";
+	classis-type = "tablet";
+
+	/* required for bootloader to select correct board */
+	qcom,msm-id = <QCOM_ID_SM8250 0x20001>; /* SM8250 v2.1 */
 	qcom,board-id = <0x10008 0>;
 
 	chosen {
@@ -25,42 +39,60 @@
 
 		framebuffer: framebuffer@9c000000 {
 			compatible = "simple-framebuffer";
-			reg = <0 0x9c000000 0 0x2300000>;
-			width = <1644>;
-			height = <3840>;
-			stride = <(1644 * 4)>;
+			reg = <0x0 0x9c000000 0x0 0x2300000>;
+			width = <1600>;
+			height = <2560>;
+			stride = <(1600 * 4)>;
 			format = "a8r8g8b8";
-			/*
-			 * That's a lot of clocks, but it's necessary due
-			 * to unused clk cleanup & no panel driver yet..
-			 */
-			clocks = <&dispcc DISP_CC_MDSS_AHB_CLK>,
-				 <&gcc GCC_DISP_HF_AXI_CLK>,
-				 <&gcc GCC_DISP_SF_AXI_CLK>,
-				 <&dispcc DISP_CC_MDSS_VSYNC_CLK>,
-				 <&dispcc DISP_CC_MDSS_MDP_CLK>,
-				 <&dispcc DISP_CC_MDSS_BYTE0_CLK>,
-				 <&dispcc DISP_CC_MDSS_BYTE0_INTF_CLK>,
-				 <&dispcc DISP_CC_MDSS_PCLK0_CLK>,
-				 <&dispcc DISP_CC_MDSS_ESC0_CLK>;
-			power-domains = <&dispcc MDSS_GDSC>;
 		};
+	};
+
+	battery_l: battery-l {
+		compatible = "simple-battery";
+		voltage-min-design-microvolt = <3870000>;
+		energy-full-design-microwatt-hours = <16600000>;
+		charge-full-design-microamp-hours = <4300000>;
+	};
+
+	battery_r: battery-r {
+		compatible = "simple-battery";
+		voltage-min-design-microvolt = <3870000>;
+		energy-full-design-microwatt-hours = <16600000>;
+		charge-full-design-microamp-hours = <4300000>;
+	};
+
+	bl_vddpos_5p5: bl-vddpos-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "bl_vddpos_5p5";
+		regulator-min-microvolt = <5500000>;
+		regulator-max-microvolt = <5500000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 130 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-boot-on;
+	};
+
+	bl_vddneg_5p5: bl-vddneg-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "bl_vddneg_5p5";
+		regulator-min-microvolt = <5500000>;
+		regulator-max-microvolt = <5500000>;
+		regulator-enable-ramp-delay = <233>;
+		gpio = <&tlmm 131 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-boot-on;
 	};
 
 	gpio_keys: gpio-keys {
 		compatible = "gpio-keys";
 
-		/*
-		 * Camera focus (light press) and camera snapshot (full press)
-		 * seem not to work properly.. Adding the former one stalls the CPU
-		 * and the latter kills the volume down key for whatever reason. In any
-		 * case, they are both on &pm8150b_gpios: camera focus(2), camera snapshot(1).
-		 */
+		pinctrl-names = "default";
+		pinctrl-0 = <&vol_up_n>;
 
-		key-vol-down {
-			label = "Volume Down";
-			linux,code = <KEY_VOLUMEDOWN>;
-			gpios = <&pm8150_gpios 1 GPIO_ACTIVE_LOW>;
+		key-vol-up {
+			label = "Volume Up";
+			gpios = <&pm8150_gpios 6 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_VOLUMEUP>;
 			debounce-interval = <15>;
 			linux,can-disable;
 			gpio-key,wakeup;
@@ -78,7 +110,6 @@
 	vreg_s6c_0p88: smpc6-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vreg_s6c_0p88";
-
 		regulator-min-microvolt = <880000>;
 		regulator-max-microvolt = <880000>;
 		regulator-always-on;
@@ -86,32 +117,41 @@
 	};
 
 	reserved-memory {
-		adsp_mem: memory@8a100000 {
-			reg = <0x0 0x8a100000 0x0 0x2500000>;
+		xbl_aop_mem: xbl-aop@80700000 {
+			reg = <0x0 0x80600000 0x0 0x260000>;
 			no-map;
 		};
 
-		spss_mem: memory@8c600000 {
-			reg = <0x0 0x8c600000 0x0 0x100000>;
+		slpi_mem: slpi@88c00000 {
+			reg = <0x0 0x88c00000 0x0 0x2f00000>;
 			no-map;
 		};
 
-		cdsp_secure_heap: memory@8c700000 {
-			reg = <0x0 0x8c700000 0x0 0x4600000>;
+		adsp_mem: adsp@8bb00000 {
+			reg = <0x0 0x8bb00000 0x0 0x2500000>;
 			no-map;
 		};
 
-		cont_splash_mem: memory@9c000000 {
+		spss_mem: spss@8e000000 {
+			reg = <0x0 0x8e000000 0x0 0x100000>;
+			no-map;
+		};
+
+		cdsp_secure_heap: cdsp-secure-heap@8e100000 {
+			reg = <0x0 0x8e100000 0x0 0x4600000>;
+			no-map;
+		};
+
+		cont_splash_mem: cont-splash@9c000000 {
 			reg = <0x0 0x9c000000 0x0 0x2300000>;
 			no-map;
 		};
 
-		ramoops@ffc00000 {
+		ramoops@b0000000 {
 			compatible = "ramoops";
-			reg = <0x0 0xffc00000 0x0 0x100000>;
+			reg = <0x0 0xb0000000 0x0 0x400000>;
 			record-size = <0x1000>;
-			console-size = <0x40000>;
-			msg-size = <0x20000 0x20000>;
+			console-size = <0x200000>;
 			ecc-size = <16>;
 			no-map;
 		};
@@ -119,6 +159,7 @@
 };
 
 &adsp {
+	firmware-name = "qcom/sm8250/xiaomi/elish/adsp.mbn";
 	status = "okay";
 };
 
@@ -139,8 +180,8 @@
 		vdd-s10-supply = <&vph_pwr>;
 		vdd-l1-l8-l11-supply = <&vreg_s6c_0p88>;
 		vdd-l2-l10-supply = <&vreg_bob>;
-		vdd-l3-l4-l5-l18-supply = <&vreg_s6a_0p6>;
-		vdd-l6-l9-supply = <&vreg_s8c_1p2>;
+		vdd-l3-l4-l5-l18-supply = <&vreg_s6a_0p95>;
+		vdd-l6-l9-supply = <&vreg_s8c_1p35>;
 		vdd-l7-l12-l14-l15-supply = <&vreg_s5a_1p9>;
 		vdd-l13-l16-l17-supply = <&vreg_bob>;
 
@@ -151,18 +192,21 @@
 			regulator-min-microvolt = <1800000>;
 			regulator-max-microvolt = <1920000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+			regulator-allow-set-load;
+			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
+						   RPMH_REGULATOR_MODE_HPM>;
 		};
 
 		vreg_s5a_1p9: smps5 {
 			regulator-name = "vreg_s5a_1p9";
-			regulator-min-microvolt = <1824000>;
+			regulator-min-microvolt = <1900000>;
 			regulator-max-microvolt = <2040000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
 		};
 
-		vreg_s6a_0p6: smps6 {
-			regulator-name = "vreg_s6a_0p6";
-			regulator-min-microvolt = <600000>;
+		vreg_s6a_0p95: smps6 {
+			regulator-name = "vreg_s6a_0p95";
+			regulator-min-microvolt = <950000>;
 			regulator-max-microvolt = <1128000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
 		};
@@ -195,6 +239,9 @@
 			regulator-min-microvolt = <1200000>;
 			regulator-max-microvolt = <1200000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+			regulator-allow-set-load;
+			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
+						   RPMH_REGULATOR_MODE_HPM>;
 		};
 
 		/* L7 is unused. */
@@ -217,9 +264,9 @@
 
 		/* L13 is unused. */
 
-		vreg_l14a_1p8: ldo14 {
-			regulator-name = "vreg_l14a_1p8";
-			regulator-min-microvolt = <1800000>;
+		vreg_l14a_1p88: ldo14 {
+			regulator-name = "vreg_l14a_1p88";
+			regulator-min-microvolt = <1880000>;
 			regulator-max-microvolt = <1880000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
 		};
@@ -231,6 +278,9 @@
 			regulator-min-microvolt = <2496000>;
 			regulator-max-microvolt = <3008000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+			regulator-allow-set-load;
+			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
+						   RPMH_REGULATOR_MODE_HPM>;
 		};
 
 		vreg_l18a_0p9: ldo18 {
@@ -260,7 +310,7 @@
 		vdd-s7-supply = <&vph_pwr>;
 		vdd-s8-supply = <&vph_pwr>;
 		vdd-l1-l8-supply = <&vreg_s4a_1p8>;
-		vdd-l2-l3-supply = <&vreg_s8c_1p2>;
+		vdd-l2-l3-supply = <&vreg_s8c_1p35>;
 		vdd-l4-l5-l6-supply = <&vreg_bob>;
 		vdd-l7-l11-supply = <&vreg_bob>;
 		vdd-l9-l10-supply = <&vreg_bob>;
@@ -288,9 +338,9 @@
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
 		};
 
-		vreg_s8c_1p2: smps8 {
-			regulator-name = "vreg_s8c_1p2";
-			regulator-min-microvolt = <1200000>;
+		vreg_s8c_1p35: smps8 {
+			regulator-name = "vreg_s8c_1p35";
+			regulator-min-microvolt = <1350000>;
 			regulator-max-microvolt = <1400000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
 		};
@@ -366,7 +416,7 @@
 
 		vdd-s1-supply = <&vph_pwr>;
 		vdd-s2-supply = <&vreg_bob>;
-		vdd-l2-supply = <&vreg_s8c_1p2>;
+		vdd-l2-supply = <&vreg_s8c_1p35>;
 		vdd-l5-l6-supply = <&vreg_bob>;
 		vdd-l7-supply = <&vreg_s4a_1p8>;
 
@@ -419,6 +469,11 @@
 };
 
 &cdsp {
+	firmware-name = "qcom/sm8250/xiaomi/elish/cdsp.mbn";
+	status = "okay";
+};
+
+&gmu {
 	status = "okay";
 };
 
@@ -434,96 +489,52 @@
 	status = "okay";
 };
 
-&i2c1 {
+&gpu {
 	status = "okay";
-	clock-frequency = <400000>;
 
-	nfc@28 {
-		compatible = "nxp,nxp-nci-i2c";
-		reg = <0x28>;
-
-		interrupt-parent = <&tlmm>;
-		interrupts = <111 IRQ_TYPE_EDGE_RISING>;
-
-		enable-gpios = <&tlmm 6 GPIO_ACTIVE_HIGH>;
-		firmware-gpios = <&tlmm 110 GPIO_ACTIVE_HIGH>;
+	zap-shader {
+		memory-region = <&gpu_mem>;
+		firmware-name = "qcom/sm8250/xiaomi/elish/a650_zap.mbn";
 	};
 };
 
-&i2c2 {
+&i2c0 {
+	clock-frequency = <400000>;
 	status = "okay";
-	clock-frequency = <1000000>;
 
-	cs35l41_l: speaker-amp@40 {
-		compatible = "cirrus,cs35l41";
-		reg = <0x40>;
-		interrupt-parent = <&tlmm>;
-		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		reset-gpios = <&tlmm 10 GPIO_ACTIVE_HIGH>;
-		cirrus,boost-peak-milliamp = <4000>;
-		cirrus,boost-ind-nanohenry = <1000>;
-		cirrus,boost-cap-microfarad = <15>;
-		cirrus,asp-sdout-hiz = <3>;
-		cirrus,gpio2-src-select = <2>;
-		cirrus,gpio2-output-enable;
-		#sound-dai-cells = <1>;
-	};
-
-	cs35l41_r: speaker-amp@41 {
-		compatible = "cirrus,cs35l41";
-		reg = <0x41>;
-		interrupt-parent = <&tlmm>;
-		interrupts = <11 IRQ_TYPE_LEVEL_LOW>;
-		reset-gpios = <&tlmm 10 GPIO_ACTIVE_HIGH>;
-		cirrus,boost-peak-milliamp = <4000>;
-		cirrus,boost-ind-nanohenry = <1000>;
-		cirrus,boost-cap-microfarad = <15>;
-		cirrus,asp-sdout-hiz = <3>;
-		cirrus,gpio2-src-select = <2>;
-		cirrus,gpio2-output-enable;
-		#sound-dai-cells = <1>;
+	fuel-gauge@55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+		monitored-battery = <&battery_r>;
 	};
 };
 
-&i2c5 {
-	status = "okay";
+&i2c11 {
 	clock-frequency = <400000>;
-
-	/* Dialog SLG51000 CMIC @ 75 */
-};
-
-&i2c9 {
 	status = "okay";
-	clock-frequency = <400000>;
 
-	/* AMS TCS3490 RGB+IR color sensor @ 72 */
+	backlight: backlight@11 {
+		compatible = "kinetic,ktz8866";
+		reg = <0x11>;
+		vddpos-supply = <&bl_vddpos_5p5>;
+		vddneg-supply = <&bl_vddneg_5p5>;
+		enable-gpios = <&tlmm 139 GPIO_ACTIVE_HIGH>;
+		current-num-sinks = <5>;
+		kinetic,current-ramp-delay-ms = <128>;
+		kinetic,led-enable-ramp-delay-ms = <1>;
+		kinetic,enable-lcd-bias;
+	};
 };
 
 &i2c13 {
-	status = "okay";
 	clock-frequency = <400000>;
+	status = "okay";
 
-	touchscreen@48 {
-		compatible = "samsung,s6sy761";
-		reg = <0x48>;
-		interrupt-parent = <&tlmm>;
-		interrupts = <39 0x2008>;
-		/* It's "vddio" downstream but it works anyway! */
-		vdd-supply = <&vreg_l1c_1p8>;
-		avdd-supply = <&vreg_l10c_3p3>;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&ts_int_default>;
+	fuel-gauge@55 {
+		compatible = "ti,bq27z561";
+		reg = <0x55>;
+		monitored-battery = <&battery_l>;
 	};
-};
-
-&i2c15 {
-	status = "okay";
-	clock-frequency = <400000>;
-
-	/* Qcom SMB1390 @ 10 */
-	/* Qcom SMB1390_slave @ 18 */
-	/* HALO HL6111R Qi charger @ 25 */
 };
 
 &pcie0 {
@@ -531,23 +542,19 @@
 };
 
 &pcie0_phy {
-	status = "okay";
-
 	vdda-phy-supply = <&vreg_l5a_0p88>;
 	vdda-pll-supply = <&vreg_l9a_1p2>;
+	status = "okay";
 };
 
-&pcie2 {
-	status = "okay";
-
-	pinctrl-0 = <&pcie2_default_state &mdm2ap_default &ap2mdm_default>;
-};
-
-&pcie2_phy {
-	status = "okay";
-
-	vdda-phy-supply = <&vreg_l5a_0p88>;
-	vdda-pll-supply = <&vreg_l9a_1p2>;
+&pm8150_gpios {
+	vol_up_n: vol-up-n-state {
+		pins = "gpio6";
+		function = "normal";
+		power-source = <1>;
+		input-enable;
+		bias-pull-up;
+	};
 };
 
 &pon_pwrkey {
@@ -555,9 +562,8 @@
 };
 
 &pon_resin {
+	linux,code = <KEY_VOLUMEDOWN>;
 	status = "okay";
-
-	linux,code = <KEY_VOLUMEUP>;
 };
 
 &qupv3_id_0 {
@@ -572,104 +578,53 @@
 	status = "okay";
 };
 
-&sdhc_2 {
-	status = "okay";
-
-	cd-gpios = <&tlmm 77 GPIO_ACTIVE_HIGH>;
-	pinctrl-names = "default", "sleep";
-	pinctrl-0 = <&sdc2_default_state &sdc2_card_det_n>;
-	pinctrl-1 = <&sdc2_sleep_state &sdc2_card_det_n>;
-	vmmc-supply = <&vreg_l9c_2p9>;
-	vqmmc-supply = <&vreg_l6c_2p9>;
-	bus-width = <4>;
-	no-sdio;
-	no-mmc;
-};
-
 &slpi {
+	firmware-name = "qcom/sm8250/xiaomi/elish/slpi.mbn";
 	status = "okay";
 };
 
 &tlmm {
-	gpio-reserved-ranges = <40 4>, <52 4>;
-
-	sdc2_default_state: sdc2-default-state {
-		clk-pins {
-			pins = "sdc2_clk";
-			drive-strength = <16>;
-			bias-disable;
-		};
-
-		cmd-pins {
-			pins = "sdc2_cmd";
-			drive-strength = <16>;
-			bias-pull-up;
-		};
-
-		data-pins {
-			pins = "sdc2_data";
-			drive-strength = <16>;
-			bias-pull-up;
-		};
-	};
-
-	mdm2ap_default: mdm2ap-default-state {
-		pins = "gpio1", "gpio3";
-		function = "gpio";
-		drive-strength = <8>;
-		bias-disable;
-	};
-
-	ts_int_default: ts-int-default-state {
-		pins = "gpio39";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-disable;
-		input-enable;
-	};
-
-	ap2mdm_default: ap2mdm-default-state {
-		pins = "gpio56", "gpio57";
-		function = "gpio";
-		drive-strength = <16>;
-		bias-disable;
-	};
-
-	sdc2_card_det_n: sd-card-det-n-state {
-		pins = "gpio77";
-		function = "gpio";
-		bias-pull-up;
-		drive-strength = <2>;
-	};
+	gpio-reserved-ranges = <40 4>;
 };
-
-&uart12 {
-	status = "okay";
-};
-
-/* BIG WARNING! DO NOT TOUCH UFS, YOUR DEVICE WILL DIE! */
-&ufs_mem_hc { status = "disabled"; };
-&ufs_mem_phy { status = "disabled"; };
 
 &usb_1 {
+	/* USB 2.0 only */
+	qcom,select-utmi-as-pipe-clk;
 	status = "okay";
 };
 
 &usb_1_dwc3 {
 	dr_mode = "peripheral";
+	maximum-spped = "high-speed";
+	/* Remove USB3 phy */
+	phys = <&usb_1_hsphy>;
+	phy-names = "usb2-phy";
 };
 
 &usb_1_hsphy {
-	status = "okay";
-
 	vdda-pll-supply = <&vreg_l5a_0p88>;
 	vdda18-supply = <&vreg_l12a_1p8>;
 	vdda33-supply = <&vreg_l2a_3p1>;
+	status = "okay";
 };
 
-&usb_1_qmpphy {
+&ufs_mem_hc {
+	vcc-supply = <&vreg_l17a_3p0>;
+	vcc-max-microamp = <800000>;
+	vccq-supply = <&vreg_l6a_1p2>;
+	vccq-max-microamp = <800000>;
+	vccq2-supply = <&vreg_s4a_1p8>;
+	vccq2-max-microamp = <800000>;
 	status = "okay";
+};
 
-	vdda-phy-supply = <&vreg_l9a_1p2>;
-	vdda-pll-supply = <&vreg_l18a_0p9>;
+&ufs_mem_phy {
+	vdda-phy-supply = <&vreg_l5a_0p88>;
+	vdda-pll-supply = <&vreg_l9a_1p2>;
+	status = "okay";
+};
+
+&venus {
+	firmware-name = "qcom/sm8250/elish/venus.mbn";
+	status = "okay";
 };
